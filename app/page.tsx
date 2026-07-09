@@ -22,9 +22,7 @@ const ALL_GROUPS = [
       "Ant Design",
       "Tailwind CSS",
       "Styled Components",
-      "Emotion",
       "Figma",
-      "Storybook",
     ],
   },
   {
@@ -42,8 +40,8 @@ const ALL_GROUPS = [
     tag: "⚙",
     items: [
       "Webpack",
-      "Vite",
       "Claude Code",
+      "Claude Design",
       "Codex",
       "Figma Make",
       "ESLint",
@@ -57,12 +55,26 @@ const ALL_GROUPS = [
   {
     key: "Backend",
     tag: "⌘",
-    items: ["Python", "FastAPI", "Node.js", "MongoDB", "REST APIs", "OpenAI API"],
+    items: [
+      "Python",
+      "FastAPI",
+      "Node.js",
+      "MongoDB",
+      "REST APIs",
+      "OpenAI API",
+      "Supabase",
+    ],
   },
   {
     key: "Industry",
     tag: "◆",
-    items: ["React Native (Expo)", "Microservices", "System Design", "Agile/Scrum", "PWA"],
+    items: [
+      "React Native (Expo)",
+      "Microservices",
+      "System Design",
+      "Agile/Scrum",
+      "PWA",
+    ],
   },
 ];
 
@@ -195,7 +207,7 @@ export default function Home() {
             }
           });
         },
-        { threshold: 0.08, rootMargin: "0px 0px -6% 0px" }
+        { threshold: 0.08, rootMargin: "0px 0px -6% 0px" },
       );
       els.forEach((el) => {
         if (el.style.opacity !== "1") io?.observe(el);
@@ -321,15 +333,13 @@ export default function Home() {
                 >
                   {item}
                 </a>
-              )
+              ),
             )}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
-              onClick={() =>
-                setTheme((t) => (t === "dark" ? "light" : "dark"))
-              }
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
               aria-label="Toggle color theme"
               title="Toggle theme"
               className="theme-btn"
@@ -512,7 +522,11 @@ export default function Home() {
             }}
           >
             <span
-              style={{ fontFamily: F.mono, color: "var(--muted)", fontSize: 15 }}
+              style={{
+                fontFamily: F.mono,
+                color: "var(--muted)",
+                fontSize: 15,
+              }}
             >
               role:
             </span>
@@ -525,7 +539,7 @@ export default function Home() {
                 letterSpacing: "-0.01em",
               }}
             >
-              &quot;Senior Front End Developer&quot;
+              &quot;Full Stack Engineer&quot;
             </span>
           </div>
           <p
@@ -618,26 +632,6 @@ export default function Home() {
               }}
             >
               Contact Me
-            </a>
-            <a
-              href="mailto:hello@talhakhan.pro?subject=Resume%20request"
-              className="btn-mono"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 9,
-                padding: "14px 22px",
-                borderRadius: 12,
-                background: "transparent",
-                color: "var(--muted)",
-                textDecoration: "none",
-                fontWeight: 500,
-                fontSize: 15,
-                fontFamily: F.mono,
-                transition: "color .2s",
-              }}
-            >
-              ↧ Download Resume
             </a>
           </div>
 
@@ -993,8 +987,7 @@ export default function Home() {
                       fontSize: 13,
                       color: "color-mix(in srgb, var(--text) 88%, transparent)",
                       fontFamily: F.mono,
-                      transition:
-                        "color .2s, border-color .2s, background .2s",
+                      transition: "color .2s, border-color .2s, background .2s",
                     }}
                   >
                     {skill}
@@ -1169,7 +1162,8 @@ export default function Home() {
                         display: "flex",
                         flexDirection: "column",
                         gap: 11,
-                        color: "color-mix(in srgb, var(--text) 78%, transparent)",
+                        color:
+                          "color-mix(in srgb, var(--text) 78%, transparent)",
                         fontSize: 14.5,
                         lineHeight: 1.6,
                       }}
@@ -1226,10 +1220,11 @@ export default function Home() {
             pointerEvents: "none",
           }}
         />
-        <div
-          style={{ position: "relative", maxWidth: 1180, margin: "0 auto" }}
-        >
-          <div data-reveal style={{ opacity: 0, transform: "translateY(24px)" }}>
+        <div style={{ position: "relative", maxWidth: 1180, margin: "0 auto" }}>
+          <div
+            data-reveal
+            style={{ opacity: 0, transform: "translateY(24px)" }}
+          >
             <p
               style={{
                 fontFamily: F.mono,
