@@ -1640,7 +1640,7 @@ export default function Home() {
                 fontFamily: F.mono,
               }}
             >
-              © 2026 Talha Khan — built from scratch, no template.
+              © 2026 Talha Khan — built from scratch, no template
             </span>
           </div>
           <div
