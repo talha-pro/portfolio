@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import ChatWidget from "./components/ChatWidget";
 
 type Theme = "dark" | "light";
 
@@ -455,6 +456,8 @@ export default function Home() {
         />
 
         <div style={{ position: "relative", maxWidth: 1180, margin: "0 auto" }}>
+        <div className="hero-grid" style={{ display: "grid", gridTemplateColumns: "1.25fr 1fr", gap: 40, alignItems: "start" }}>
+        <div>
           <div
             data-reveal
             style={{
@@ -713,6 +716,12 @@ export default function Home() {
               hello@talhakhan.pro ↗
             </a>
           </div>
+        </div>
+
+        <div data-reveal data-delay="100" style={{ opacity: 0, transform: "translateY(24px)" }}>
+          <ChatWidget />
+        </div>
+        </div>
         </div>
       </header>
 
