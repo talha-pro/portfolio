@@ -172,6 +172,13 @@ export default function Home() {
   });
   const rootRef = useRef<HTMLDivElement>(null);
 
+  const visitReported = useRef(false);
+  useEffect(() => {
+    if (visitReported.current) return;
+    visitReported.current = true;
+    fetch("/api/visit", { method: "POST" }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
