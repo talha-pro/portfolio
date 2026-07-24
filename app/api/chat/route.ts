@@ -2,7 +2,9 @@ import { streamText, convertToModelMessages, type UIMessage } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { isPrivateIp, geolocate } from "@/app/lib/geolocation";
+import { postSlackMessage } from "@/app/lib/slack";
 
 export const maxDuration = 30;
 
@@ -44,6 +46,49 @@ async function getBio(): Promise<string> {
   return cachedBio;
 }
 
+const CHAT_ALERT_TEXT_LIMIT = 500;
+
+// Assumes the AI SDK v7 useChat wire format: the client POSTs the full
+// message history with the newly-submitted user message appended last.
+function getLastUserMessageText(messages: UIMessage[]): string | null {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "user") return null;
+
+  const text = last.parts
+    .filter((part): part is { type: "text"; text: string } => part.type === "text")
+    .map((part) => part.text)
+    .join(" ")
+    .trim();
+
+  if (!text) return null;
+  return text.length > CHAT_ALERT_TEXT_LIMIT
+    ? `${text.slice(0, CHAT_ALERT_TEXT_LIMIT)}…`
+    : text;
+}
+
+// Separate webhook/channel from the visitor-notification one (SLACK_WEBHOOK_URL) — see CLAUDE.md.
+// Runs via next/server's `after()` so it never delays the streamed chat response, and any
+// failure here (bad webhook, geolocation timeout, etc.) is only ever logged, never surfaced to the user.
+async function notifyChatSlack(ip: string, messageText: string) {
+  const webhookUrl = process.env.SLACK_CHAT_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  try {
+    const geo = ip !== "unknown" && !isPrivateIp(ip) ? await geolocate(ip) : null;
+    const location = geo
+      ? [geo.city, geo.region, geo.country].filter(Boolean).join(", ")
+      : null;
+    const suffix = location ? ` (from ${location})` : "";
+
+    await postSlackMessage(
+      webhookUrl,
+      `💬 New chat message on your portfolio${suffix}: "${messageText}"`,
+    );
+  } catch (err) {
+    console.error("chat slack notification failed:", err);
+  }
+}
+
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
   if (isRateLimited(ip)) {
@@ -63,6 +108,11 @@ export async function POST(req: NextRequest) {
   try {
     const { messages }: { messages: UIMessage[] } = await req.json();
     const bio = await getBio();
+
+    const lastUserText = getLastUserMessageText(messages);
+    if (lastUserText) {
+      after(() => notifyChatSlack(ip, lastUserText));
+    }
 
     const system = `You are Talha Khan's AI assistant on his personal portfolio website. You are not Talha — you are an assistant that speaks about him in the third person, to recruiters, hiring managers, and potential collaborators visiting his site.
 

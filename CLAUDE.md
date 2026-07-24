@@ -73,6 +73,7 @@ See `.env.example`. Summary:
 | `SLACK_WEBHOOK_URL` | For visitor notifications | Slack Incoming Webhook URL. Feature no-ops (no error) if unset. |
 | `ENABLE_VISITOR_NOTIFICATIONS` | No | Set `true` to send Slack notifications outside production (e.g. to test locally). |
 | `OPENAI_API_KEY` | For the chat | OpenAI API key. Chat route returns a 503 with a friendly error (doesn't crash the page) if unset. |
+| `SLACK_CHAT_WEBHOOK_URL` | For chat message alerts | Separate Slack Incoming Webhook URL (its own channel) that gets pinged with the text of every user-submitted chat message. Independent from `SLACK_WEBHOOK_URL` — no-ops if unset. |
 
 ## Features built by AI agents (this section, keep updated)
 
@@ -107,3 +108,12 @@ Fires once per page load from a `useEffect` in `page.tsx` (`fetch("/api/visit", 
 - **Rate limiting is in-memory only** (`Map<ip, {count, windowStart}>`, 10 requests/10 minutes per IP, 429 past that) — best-effort, resets on redeploy/cold start, and isn't shared across serverless instances. That's an intentional tradeoff to avoid adding Redis/Upstash/KV infra for a portfolio-scale chat; revisit if abuse becomes a real problem.
 - `ChatWidget.tsx` uses `@ai-sdk/react`'s `useChat()` (no built-in input state in this SDK version — the component manages its own `input` via `useState` and calls `sendMessage({ text })`). Rendered to the right of the hero content (`.hero-grid` two-column layout in `page.tsx`/`globals.css`, collapsing to one column ≤768px). Includes empty-state suggested prompts, a "thinking…" indicator while `status` is `"submitted"`/`"streaming"`, and an inline (non-fatal) error message if the request fails.
 - **Shared helpers:** IP/geolocation logic (`getClientIp`, `isPrivateIp`, `geolocate`) was extracted out of `app/api/visit/route.ts` into `app/lib/geolocation.ts`, and the generic "POST a text message to a Slack Incoming Webhook" call into `app/lib/slack.ts`. Both `app/api/visit/route.ts` and `app/api/chat/route.ts` import from these rather than duplicating the logic.
+
+### 4. Chat message Slack alerts (`app/api/chat/route.ts`)
+
+Every time a visitor **submits** a message in the hero chat widget (once per send, not per streamed token, and never for the assistant's reply), the server posts an alert to a **second, separate** Slack Incoming Webhook — `SLACK_CHAT_WEBHOOK_URL` — distinct from the visitor-notification `SLACK_WEBHOOK_URL`. Point it at its own channel (e.g. `#portfolio-chat`) so the two notification streams don't mix; a failure or missing config in one webhook has no effect on the other.
+
+- On each `POST` to `/api/chat`, after the existing rate-limit check passes and the request body is parsed, `getLastUserMessageText(messages)` pulls the text out of the **last** message in the payload (assumes the AI SDK v7 `useChat` wire format: `{ messages: UIMessage[] }` with the newly-submitted user message appended last, and text living in `message.parts` entries of `type: "text"` — same shape `ChatWidget.tsx` already reads). The text is truncated to 500 chars for the Slack alert.
+- The Slack call is scheduled via Next's `after()` (`next/server`) — `after(() => notifyChatSlack(ip, lastUserText))` — so it runs after the response is sent and **never delays or blocks** the streamed AI reply, even if Slack or the geolocation lookup is slow.
+- `notifyChatSlack` reuses the shared `isPrivateIp` / `geolocate` helpers (best-effort location, skipped for private/unknown IPs) and posts: `💬 New chat message on your portfolio (from {city, region, country}): "{message text}"`. If `SLACK_CHAT_WEBHOOK_URL` is unset, it no-ops. Every failure path is caught and only `console.error`'d — it can never surface an error to the chat UI or affect the streamed response.
+- Because the notification is only scheduled *after* the existing per-IP rate limiter (10 requests / 10 minutes) lets a request through, a burst of chat spam from one visitor is capped the same way the OpenAI calls already are — no separate rate limiting was added.
