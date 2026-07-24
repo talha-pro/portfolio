@@ -507,6 +507,11 @@ export default function Home() {
             }}
           >
             Talha Khan<span style={{ color: "var(--accent)" }}>.</span>
+            <span className="sr-only">
+              {" "}
+              — Full Stack Engineer specializing in React, Next.js, and
+              Agentic AI
+            </span>
           </h1>
           <div
             data-reveal
