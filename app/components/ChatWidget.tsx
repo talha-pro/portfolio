@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const F = {
   space: "var(--font-space-grotesk), sans-serif",
@@ -19,8 +19,15 @@ const SUGGESTIONS = [
 export default function ChatWidget() {
   const { messages, sendMessage, status, error, clearError } = useChat();
   const [input, setInput] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const isBusy = status === "submitted" || status === "streaming";
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, isBusy, error]);
 
   const submit = (text: string) => {
     const trimmed = text.trim();
@@ -72,6 +79,7 @@ export default function ChatWidget() {
       </div>
 
       <div
+        ref={scrollRef}
         style={{
           flex: 1,
           overflowY: "auto",
