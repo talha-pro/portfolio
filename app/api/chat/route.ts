@@ -1,4 +1,12 @@
-import { streamText, convertToModelMessages, type UIMessage } from "ai";
+import {
+  streamText,
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  APICallError,
+  type UIMessage,
+  type UIMessageStreamWriter,
+} from "ai";
 import { openai } from "@ai-sdk/openai";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -89,6 +97,75 @@ async function notifyChatSlack(ip: string, messageText: string) {
   }
 }
 
+const OPENAI_FALLBACK_MESSAGE =
+  "I'm temporarily unable to respond right now — please reach out to Talha directly via email or phone, he'd be happy to help.";
+
+type OpenAIErrorKind = "insufficient_quota" | "rate_limited" | "api_error" | "network";
+
+function parseJsonSafe(text?: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+// Distinguishes billing failures (insufficient_quota — the OpenAI account is out of
+// credit/over its spending limit) from a generic rate-limit 429 (same HTTP status,
+// different error.code/type in the body) and from network-level failures, where the
+// call never got a response at all (timeout, DNS, connection reset — not an APICallError).
+function classifyOpenAIError(err: unknown): OpenAIErrorKind {
+  if (!APICallError.isInstance(err)) return "network";
+  if (err.statusCode !== 429) return "api_error";
+
+  const body = parseJsonSafe(err.responseBody) as { error?: { code?: string; type?: string } } | null;
+  const code = body?.error?.code;
+  const type = body?.error?.type;
+  return code === "insufficient_quota" || type === "insufficient_quota"
+    ? "insufficient_quota"
+    : "rate_limited";
+}
+
+// Best-effort, in-memory cooldown (same tradeoff as the rate limiter above) so a burst
+// of failed chat requests during an outage sends one Slack alert, not one per message.
+const QUOTA_ALERT_COOLDOWN_MS = 60 * 60 * 1000;
+let lastQuotaAlertAt = 0;
+
+async function alertQuotaExhausted() {
+  const now = Date.now();
+  if (now - lastQuotaAlertAt < QUOTA_ALERT_COOLDOWN_MS) return;
+  lastQuotaAlertAt = now;
+
+  const webhookUrl = process.env.SLACK_CHAT_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  try {
+    await postSlackMessage(
+      webhookUrl,
+      "🚨 OpenAI quota/billing error on the portfolio chat — visitors are seeing a fallback message. Check your OpenAI account's balance or spending limit.",
+    );
+  } catch (err) {
+    console.error("quota alert slack notification failed:", err);
+  }
+}
+
+// Writes a normal, complete assistant text message into the UI message stream —
+// indistinguishable from a real reply on the client, with no error state involved.
+function writeFallbackAssistantMessage(
+  writer: UIMessageStreamWriter,
+  messageAlreadyStarted: boolean,
+) {
+  if (!messageAlreadyStarted) {
+    writer.write({ type: "start" });
+  }
+  const id = "fallback";
+  writer.write({ type: "text-start", id });
+  writer.write({ type: "text-delta", id, delta: OPENAI_FALLBACK_MESSAGE });
+  writer.write({ type: "text-end", id });
+  writer.write({ type: "finish" });
+}
+
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
   if (isRateLimited(ip)) {
@@ -125,13 +202,45 @@ If a question asks about something not covered in the career info (personal deta
 CAREER INFO:
 ${bio}`;
 
-    const result = streamText({
-      model: openai("gpt-4o-mini"),
-      system,
-      messages: await convertToModelMessages(messages),
+    const modelMessages = await convertToModelMessages(messages);
+
+    // Built manually (rather than result.toUIMessageStreamResponse()) so an OpenAI-side
+    // failure can be swapped for a normal-looking assistant message instead of an error
+    // chunk — see classifyOpenAIError / writeFallbackAssistantMessage above.
+    const stream = createUIMessageStream({
+      execute: async ({ writer }) => {
+        const result = streamText({
+          model: openai("gpt-4o-mini"),
+          system,
+          messages: modelMessages,
+        });
+
+        let messageStarted = false;
+        let lastErrorKind: OpenAIErrorKind | null = null;
+
+        for await (const chunk of result.toUIMessageStream({
+          onError: (error) => {
+            lastErrorKind = classifyOpenAIError(error);
+            console.error(`OpenAI chat call failed (${lastErrorKind}):`, error);
+            return OPENAI_FALLBACK_MESSAGE;
+          },
+        })) {
+          if (chunk.type === "start") messageStarted = true;
+
+          if (chunk.type === "error") {
+            if (lastErrorKind === "insufficient_quota") {
+              after(() => alertQuotaExhausted());
+            }
+            writeFallbackAssistantMessage(writer, messageStarted);
+            break;
+          }
+
+          writer.write(chunk);
+        }
+      },
     });
 
-    return result.toUIMessageStreamResponse();
+    return createUIMessageStreamResponse({ stream });
   } catch (err) {
     console.error("chat request failed:", err);
     return NextResponse.json(
